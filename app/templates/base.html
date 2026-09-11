@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{% block title %}VisionTrack{% endblock %}</title>
+  <link rel="stylesheet" href="/static/css/main.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+</head>
+<body>
+
+<!-- Sidebar Navigation -->
+<nav class="sidebar">
+  <div class="sidebar-brand">
+    <div class="brand-icon">
+      <svg viewBox="0 0 32 32" fill="none"><circle cx="16" cy="16" r="6" fill="currentColor" opacity=".9"/><circle cx="16" cy="16" r="13" stroke="currentColor" stroke-width="2" opacity=".3"/><circle cx="16" cy="16" r="10" stroke="currentColor" stroke-width="1" opacity=".15"/></svg>
+    </div>
+    <span class="brand-name">VisionTrack</span>
+  </div>
+
+  <ul class="nav-links">
+    <li><a href="/" class="nav-link {% if page=='dashboard' %}active{% endif %}">
+      <svg viewBox="0 0 20 20" fill="currentColor"><path d="M3 3h6v6H3V3zm0 8h6v6H3v-6zm8-8h6v6h-6V3zm0 8h6v6h-6v-6z"/></svg>
+      Dashboard
+    </a></li>
+    <li><a href="/live" class="nav-link {% if page=='live' %}active{% endif %}">
+      <svg viewBox="0 0 20 20" fill="currentColor"><circle cx="10" cy="10" r="7" stroke="currentColor" stroke-width="1.5" fill="none"/><circle cx="10" cy="10" r="3" fill="currentColor"/></svg>
+      Live Cameras
+      <span id="live-badge" class="badge"></span>
+    </a></li>
+    <li><a href="/persons" class="nav-link {% if page=='persons' %}active{% endif %}">
+      <svg viewBox="0 0 20 20" fill="currentColor"><path d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z"/></svg>
+      Persons
+    </a></li>
+    <li><a href="/history" class="nav-link {% if page=='history' %}active{% endif %}">
+      <svg viewBox="0 0 20 20" fill="currentColor"><path d="M10 3a7 7 0 100 14A7 7 0 0010 3zm1 7.414V6h-2v5.414l3.293 3.293 1.414-1.414L11 10.414z"/></svg>
+      History
+    </a></li>
+    <li><a href="/search" class="nav-link {% if page=='search' %}active{% endif %}">
+      <svg viewBox="0 0 20 20" fill="currentColor"><path d="M9 3a6 6 0 014.472 10.056l3.736 3.737-1.415 1.414-3.736-3.736A6 6 0 119 3zm0 2a4 4 0 100 8A4 4 0 009 5z"/></svg>
+      Search
+    </a></li>
+    <li><a href="/settings" class="nav-link {% if page=='settings' %}active{% endif %}">
+      <svg viewBox="0 0 20 20" fill="currentColor"><path d="M8.4 2.5a.5.5 0 01.5-.5h2.2a.5.5 0 01.5.5l.2 1.5a6 6 0 011.4.8l1.5-.6a.5.5 0 01.6.2l1.1 1.9a.5.5 0 01-.1.6l-1.2 1a6 6 0 010 1.6l1.2 1a.5.5 0 01.1.6l-1.1 1.9a.5.5 0 01-.6.2l-1.5-.6a6 6 0 01-1.4.8l-.2 1.5a.5.5 0 01-.5.5H8.9a.5.5 0 01-.5-.5l-.2-1.5a6 6 0 01-1.4-.8l-1.5.6a.5.5 0 01-.6-.2L3.6 13a.5.5 0 01.1-.6l1.2-1a6 6 0 010-1.6l-1.2-1A.5.5 0 013.6 8l1.1-1.9a.5.5 0 01.6-.2l1.5.6a6 6 0 011.4-.8l.2-1.5zM10 7a3 3 0 100 6 3 3 0 000-6z"/></svg>
+      Settings
+    </a></li>
+  </ul>
+
+  <div class="sidebar-footer">
+    <div class="ws-status" id="ws-status">
+      <span class="dot"></span>
+      <span class="ws-label">Connecting…</span>
+    </div>
+  </div>
+</nav>
+
+<!-- Main content -->
+<main class="main-content">
+  <div class="top-bar">
+    <div class="page-title">{% block page_title %}{% endblock %}</div>
+    <div class="top-actions">{% block top_actions %}{% endblock %}</div>
+  </div>
+
+  <div class="content-body">
+    {% block content %}{% endblock %}
+  </div>
+</main>
+
+<!-- Toast notification -->
+<div id="toast-container"></div>
+
+<script src="/static/js/main.js"></script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

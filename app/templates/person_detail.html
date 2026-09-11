@@ -1,0 +1,200 @@
+{% extends "base.html" %}
+{% block title %}{{ person_id }} — VisionTrack{% endblock %}
+{% block page_title %}{{ name or person_id }}{% endblock %}
+{% block top_actions %}
+  <a href="/persons" class="btn btn-sm btn-ghost">← All Persons</a>
+{% endblock %}
+
+{% block content %}
+{% if qdrant_error %}
+<div style="background:rgba(245,101,101,0.15);border:1px solid rgba(245,101,101,0.4);color:#fc8181;border-radius:8px;padding:0.75rem 1rem;margin-bottom:1rem;font-size:0.85rem;">
+  ⚠️ <strong>Qdrant error:</strong> {{ qdrant_error }} — Data history tidak tersedia saat ini, tapi Anda tetap bisa mengedit label/nama.
+</div>
+{% endif %}
+<div class="person-detail-layout">
+
+  <!-- Left: gallery -->
+  <section class="gallery-section">
+    <h2>Snapshots</h2>
+    <div class="snapshot-gallery" id="snapshot-gallery">
+      {% for snap in snapshot_paths %}
+      <div class="snapshot-card">
+        <img class="snapshot-img" src="/{{ snap.path }}" alt="{{ person_id }}" 
+             onerror="this.style.display='none'" />
+        <div class="snapshot-details" style="font-size: 0.8rem; color: #a0aec0; margin-top: 0.5rem; text-align: center;">
+          <div style="font-weight: 500; color: #e2e8f0; margin-bottom: 0.2rem;">📷 {{ snap.camera }}</div>
+          <div class="snap-timestamp" data-ts="{{ snap.timestamp }}">{{ snap.timestamp }}</div>
+        </div>
+      </div>
+      {% else %}
+      <div class="empty-state">No snapshots saved yet.</div>
+      {% endfor %}
+    </div>
+  </section>
+
+  <!-- Right: details -->
+  <aside class="detail-aside">
+
+    <!-- Edit Identity Card -->
+    <div class="detail-card edit-card">
+      <h3>✏️ Edit Identity</h3>
+      <form id="edit-person-form" class="edit-form">
+        <div class="form-group">
+          <label for="person-name">Nama</label>
+          <input id="person-name" type="text" class="form-input"
+                 placeholder="Contoh: Pak Budi"
+                 value="{{ name or '' }}" />
+        </div>
+        <div class="form-group">
+          <label for="person-label">Label</label>
+          <select id="person-label" class="form-input">
+            <option value="">— Pilih label —</option>
+            <option value="staff" {% if label == 'staff' %}selected{% endif %}>Staff</option>
+            <option value="visitor" {% if label == 'visitor' %}selected{% endif %}>Visitor</option>
+            <option value="vip" {% if label == 'vip' %}selected{% endif %}>VIP</option>
+            <option value="suspicious" {% if label == 'suspicious' %}selected{% endif %}>Suspicious</option>
+            <option value="unknown" {% if label == 'unknown' %}selected{% endif %}>Unknown</option>
+          </select>
+        </div>
+        <button type="submit" class="btn btn-primary" id="save-btn">💾 Simpan</button>
+      </form>
+      <div id="edit-status" class="edit-status" style="display:none;"></div>
+    </div>
+
+    <div class="detail-card">
+      <h3>Identity</h3>
+      <dl class="detail-list">
+        <dt>Person ID</dt><dd>{{ person_id }}</dd>
+        <dt>Nama</dt><dd id="display-name">{{ name or '–' }}</dd>
+        <dt>Label</dt><dd id="display-label">{{ label or '–' }}</dd>
+        <dt>First Seen</dt><dd>{{ first_seen or '–' }}</dd>
+        <dt>Last Seen</dt><dd>{{ last_seen or '–' }}</dd>
+        <dt>Total Detections</dt><dd>{{ total_detections }}</dd>
+      </dl>
+    </div>
+
+    <div class="detail-card">
+      <h3>Cameras Seen</h3>
+      <div class="camera-tags">
+        {% for cam in cameras_seen %}
+        <span class="camera-tag">{{ cam }}</span>
+        {% else %}
+        <span class="empty-state">–</span>
+        {% endfor %}
+      </div>
+    </div>
+
+    <div class="detail-card">
+      <h3>Movement Timeline</h3>
+      <div class="timeline" id="timeline">
+        {% for event in history %}
+        <div class="timeline-item">
+          <div class="timeline-dot"></div>
+          <div class="timeline-content">
+            <div class="tl-camera">{{ event.camera }}</div>
+            <div class="tl-time">{{ event.timestamp }}</div>
+            {% if event.snapshot %}
+            <img class="tl-snap" src="/{{ event.snapshot }}" alt="" onerror="this.style.display='none'" />
+            {% endif %}
+          </div>
+        </div>
+        {% else %}
+        <div class="empty-state">No history yet.</div>
+        {% endfor %}
+      </div>
+    </div>
+  </aside>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<style>
+  .snapshot-card {
+    display: flex;
+    flex-direction: column;
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 8px;
+    padding: 0.5rem;
+    overflow: hidden;
+  }
+  .snapshot-card img {
+    border-radius: 4px;
+    width: 100%;
+    height: auto;
+    object-fit: cover;
+  }
+  .edit-card { border: 1px solid rgba(99,179,237,0.3); }
+  .edit-form { display: flex; flex-direction: column; gap: 0.75rem; }
+  .form-group { display: flex; flex-direction: column; gap: 0.25rem; }
+  .form-group label { font-size: 0.78rem; color: var(--text-muted); font-weight: 500; text-transform: uppercase; letter-spacing: 0.05em; }
+  .form-input { background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.12); border-radius: 6px; padding: 0.5rem 0.75rem; color: var(--text-primary, #f0f4f8); font-size: 0.9rem; outline: none; transition: border-color .2s; }
+  .form-input:focus { border-color: rgba(99,179,237,0.6); }
+  .form-input option { background: #1e2a3a; }
+  .btn-primary { background: linear-gradient(135deg,#3b82f6,#2563eb); color: #fff; border: none; border-radius: 8px; padding: 0.55rem 1.2rem; font-weight: 600; cursor: pointer; transition: opacity .2s, transform .1s; }
+  .btn-primary:hover { opacity: 0.88; transform: translateY(-1px); }
+  .btn-primary:active { transform: translateY(0); }
+  .edit-status { margin-top: 0.5rem; font-size: 0.85rem; padding: 0.4rem 0.75rem; border-radius: 6px; }
+  .edit-status.success { background: rgba(72,187,120,0.15); color: #68d391; border: 1px solid rgba(72,187,120,0.3); }
+  .edit-status.error { background: rgba(245,101,101,0.15); color: #fc8181; border: 1px solid rgba(245,101,101,0.3); }
+</style>
+<script>
+  const PERSON_ID = "{{ person_id }}";
+
+  document.getElementById("edit-person-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const nameVal  = document.getElementById("person-name").value.trim();
+    const labelVal = document.getElementById("person-label").value.trim();
+    const btn      = document.getElementById("save-btn");
+    const status   = document.getElementById("edit-status");
+
+    btn.disabled = true;
+    btn.textContent = "Menyimpan…";
+    status.style.display = "none";
+
+    try {
+      const resp = await fetch(`/api/person/${encodeURIComponent(PERSON_ID)}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name:  nameVal  || null,
+          label: labelVal || null,
+        }),
+      });
+
+      const data = await resp.json();
+
+      if (resp.ok) {
+        // Update display values
+        document.getElementById("display-name").textContent  = data.name  || "–";
+        document.getElementById("display-label").textContent = data.label || "–";
+        // Update page title
+        document.querySelector(".page-title").textContent = data.name || PERSON_ID;
+
+        status.className = "edit-status success";
+        status.textContent = "✅ Berhasil disimpan!";
+        status.style.display = "block";
+      } else {
+        throw new Error(data.detail || "Gagal menyimpan");
+      }
+    } catch (err) {
+      status.className = "edit-status error";
+      status.textContent = "❌ Error: " + err.message;
+      status.style.display = "block";
+    } finally {
+      btn.disabled = false;
+      btn.textContent = "💾 Simpan";
+      setTimeout(() => { status.style.display = "none"; }, 4000);
+    }
+  });
+
+  // Format timestamps
+  document.querySelectorAll('.snap-timestamp').forEach(el => {
+    const ts = el.getAttribute('data-ts');
+    if (ts && typeof formatTime === 'function') {
+      el.textContent = formatTime(ts);
+    }
+  });
+</script>
+{% endblock %}

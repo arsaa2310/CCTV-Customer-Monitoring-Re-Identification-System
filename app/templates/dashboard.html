@@ -1,0 +1,212 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — VisionTrack{% endblock %}
+{% block page_title %}Dashboard{% endblock %}
+
+{% block content %}
+<!-- Stat cards -->
+<div class="stat-grid">
+  <div class="stat-card">
+    <div class="stat-icon cameras">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M15 10l4.553-2.277A1 1 0 0121 8.68v6.64a1 1 0 01-1.447.894L15 14M3 8h12a2 2 0 012 2v4a2 2 0 01-2 2H3a2 2 0 01-2-2v-4a2 2 0 012-2z"/></svg>
+    </div>
+    <div class="stat-value" id="stat-cameras">–</div>
+    <div class="stat-label">Active Cameras</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-icon persons">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M9 11a4 4 0 100-8 4 4 0 000 8zm8 4a3 3 0 00-3-3"/></svg>
+    </div>
+    <div class="stat-value" id="stat-persons">–</div>
+    <div class="stat-label">Total Persons</div>
+  </div>
+
+  <!-- Customer Counter Card -->
+  <div class="stat-card customer-card" id="customer-card">
+    <div class="stat-icon" style="background:rgba(251,146,60,0.15);color:#fb923c;">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+        <path d="M16 11c1.657 0 3-1.343 3-3s-1.343-3-3-3-3 1.343-3 3 1.343 3 3 3zm-8 0c1.657 0 3-1.343 3-3S9.657 5 8 5 5 6.343 5 8s1.343 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/>
+      </svg>
+    </div>
+    <div class="stat-value customer-count" id="stat-customers">0</div>
+    <div class="stat-label">Active Customers</div>
+    <div class="customer-pulse" id="customer-pulse"></div>
+  </div>
+
+  <div class="stat-card">
+    <div class="stat-icon gpu">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 6V4m4 2V4m4 2V4m4 2V4M6 18v2m4-2v2m4-2v2m4-2v2"/></svg>
+    </div>
+    <div class="stat-value" id="stat-gpu">–</div>
+    <div class="stat-label">Compute</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-icon uptime">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+    </div>
+    <div class="stat-value" id="stat-uptime">–</div>
+    <div class="stat-label">Uptime</div>
+  </div>
+</div>
+
+<!-- Camera status grid -->
+<section class="section">
+  <div class="section-header">
+    <h2>Camera Status</h2>
+    <a href="/live" class="btn btn-sm btn-ghost">View live →</a>
+  </div>
+  <div class="camera-status-grid" id="camera-status-grid">
+    <div class="loading-placeholder">Loading cameras…</div>
+  </div>
+</section>
+
+<!-- Recent activity feed -->
+<section class="section">
+  <div class="section-header">
+    <h2>Live Activity</h2>
+    <span class="badge-live">LIVE</span>
+  </div>
+  <div class="activity-feed" id="activity-feed">
+    <div class="feed-empty">Waiting for detections…</div>
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<style>
+  .customer-card {
+    position: relative;
+    border: 1px solid rgba(251,146,60,0.25);
+    overflow: hidden;
+  }
+  .customer-card .stat-value { color: #fb923c; }
+  .customer-count {
+    transition: transform 0.3s cubic-bezier(.34,1.56,.64,1), color 0.3s;
+  }
+  .customer-count.bump {
+    transform: scale(1.35);
+    color: #fbbf24 !important;
+  }
+  .customer-pulse {
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, transparent, #fb923c, transparent);
+    background-size: 200% 100%;
+    animation: pulse-sweep 2s linear infinite;
+    opacity: 0;
+    transition: opacity 0.5s;
+  }
+  .customer-pulse.active { opacity: 1; }
+  @keyframes pulse-sweep {
+    0%   { background-position: -100% 0; }
+    100% { background-position: 200% 0; }
+  }
+  .feed-item.customer-event { border-left: 3px solid #fb923c; }
+</style>
+
+<script>
+// ── Customer count state ──────────────────────────────────────────────
+let lastCustomerCount = 0;
+
+function updateCustomerCard(count) {
+  const el = document.getElementById('stat-customers');
+  const pulse = document.getElementById('customer-pulse');
+  if (!el) return;
+  if (count !== lastCustomerCount) {
+    lastCustomerCount = count;
+    el.textContent = count;
+    // Bump animation
+    el.classList.remove('bump');
+    void el.offsetWidth; // reflow
+    el.classList.add('bump');
+    setTimeout(() => el.classList.remove('bump'), 400);
+    // Pulse bar
+    pulse.classList.add('active');
+    clearTimeout(pulse._t);
+    pulse._t = setTimeout(() => pulse.classList.remove('active'), 3000);
+  }
+}
+
+// ── WebSocket real-time update ────────────────────────────────────────
+window.addEventListener('ws-event', (e) => {
+  const ev = e.detail;
+
+  // Customer count update
+  if (ev.event_type === 'customer_count_update') {
+    updateCustomerCard(ev.payload?.count ?? 0);
+
+    // Feed entry
+    const feed = document.getElementById('activity-feed');
+    const empty = feed.querySelector('.feed-empty');
+    if (empty) empty.remove();
+    const item = document.createElement('div');
+    item.className = 'feed-item customer-event';
+    const delta = (ev.payload?.count ?? 0) - lastCustomerCount;
+    item.innerHTML = `
+      <span class="feed-icon">🛒</span>
+      <span class="feed-label">Customer count → <strong>${ev.payload?.count}</strong></span>
+      <span class="feed-cam">system</span>
+      <span class="feed-time">${formatTime(ev.timestamp)}</span>
+    `;
+    feed.prepend(item);
+    if (feed.children.length > 50) feed.lastChild?.remove();
+    return;
+  }
+
+  // Other events
+  const feed = document.getElementById('activity-feed');
+  const empty = feed.querySelector('.feed-empty');
+  if (empty) empty.remove();
+  const item = document.createElement('div');
+  item.className = 'feed-item';
+  const icon = ev.event_type === 'new_person' ? '🆕' :
+               ev.event_type === 'new_detection' ? '👤' :
+               ev.event_type === 'camera_online' ? '📷' : '⚠️';
+  const label = ev.payload?.person_id || ev.payload?.name || ev.camera_id;
+  item.innerHTML = `
+    <span class="feed-icon">${icon}</span>
+    <span class="feed-label">${label}</span>
+    <span class="feed-cam">${ev.camera_id}</span>
+    <span class="feed-time">${formatTime(ev.timestamp)}</span>
+  `;
+  feed.prepend(item);
+  if (feed.children.length > 50) feed.lastChild?.remove();
+});
+
+// ── Polling fallback (updates every 5s) ──────────────────────────────
+async function refreshDashboard() {
+  const sys = await apiFetch('/api/system');
+  if (sys) {
+    setText('stat-cameras', sys.active_cameras + '/' + sys.total_cameras);
+    setText('stat-persons', sys.total_persons);
+    setText('stat-gpu', sys.gpu_available ? 'GPU (CUDA)' : 'CPU');
+    setText('stat-uptime', formatUptime(sys.uptime_seconds));
+  }
+
+  // Poll customer count as fallback if WS misses an update
+  const cust = await apiFetch('/api/customers/count');
+  if (cust) updateCustomerCard(cust.active_customers ?? 0);
+
+  const cameras = await apiFetch('/api/cameras');
+  if (cameras) {
+    const grid = document.getElementById('camera-status-grid');
+    grid.innerHTML = cameras.map(c => `
+      <div class="camera-status-card ${c.online ? 'online' : 'offline'}">
+        <div class="cam-indicator"></div>
+        <div class="cam-info">
+          <div class="cam-name">${c.name}</div>
+          <div class="cam-meta">${c.location} · ${c.id}</div>
+        </div>
+        <div class="cam-stats">
+          <span>${c.fps} fps</span>
+          <span>${c.detection_count} det</span>
+        </div>
+      </div>
+    `).join('');
+  }
+}
+
+refreshDashboard();
+setInterval(refreshDashboard, 5000);
+</script>
+{% endblock %}

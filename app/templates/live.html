@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% block title %}Live Cameras — VisionTrack{% endblock %}
+{% block page_title %}Live Cameras{% endblock %}
+
+{% block content %}
+<div class="live-grid" id="live-grid">
+  <div class="loading-placeholder">Loading streams…</div>
+</div>
+
+<div class="overlay-info" id="overlay-info" style="display:none;">
+  <h3 id="overlay-person-id"></h3>
+  <div id="overlay-details"></div>
+  <button onclick="document.getElementById('overlay-info').style.display='none'">✕</button>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function buildLiveGrid() {
+  const cameras = await apiFetch('/api/cameras');
+  if (!cameras || cameras.length === 0) {
+    document.getElementById('live-grid').innerHTML = '<div class="empty-state">No cameras configured. Edit config/cameras.json to add cameras.</div>';
+    return;
+  }
+
+  const grid = document.getElementById('live-grid');
+  grid.innerHTML = cameras.map(cam => `
+    <div class="stream-card" id="card-${cam.id}">
+      <div class="stream-header">
+        <span class="stream-name">${cam.name}</span>
+        <span class="stream-loc">${cam.location}</span>
+        <span class="stream-status ${cam.online ? 'online' : 'offline'}" id="status-${cam.id}">
+          ${cam.online ? '● LIVE' : '○ OFFLINE'}
+        </span>
+      </div>
+      <div class="stream-body">
+        <img class="stream-img" src="/stream/${cam.id}"
+             alt="${cam.name}" onerror="handleStreamError(this, '${cam.id}')" />
+        <div class="stream-overlay" id="overlay-${cam.id}"></div>
+      </div>
+      <div class="stream-footer">
+        <span id="fps-${cam.id}" class="stream-fps">– fps</span>
+        <span id="det-${cam.id}" class="stream-det">0 detections</span>
+      </div>
+    </div>
+  `).join('');
+}
+
+function handleStreamError(img, camId) {
+  img.onerror = null;
+  img.src = '/static/img/offline.svg';
+}
+
+// Update overlays from WebSocket events
+window.addEventListener('ws-event', (e) => {
+  const ev = e.detail;
+  const camId = ev.camera_id;
+
+  // Status
+  const statusEl = document.getElementById(`status-${camId}`);
+  if (statusEl) {
+    if (ev.event_type === 'camera_online') {
+      statusEl.className = 'stream-status online';
+      statusEl.textContent = '● LIVE';
+    } else if (ev.event_type === 'camera_offline') {
+      statusEl.className = 'stream-status offline';
+      statusEl.textContent = '○ OFFLINE';
+    }
+  }
+
+  // Detection overlay
+  if (ev.event_type === 'new_detection' || ev.event_type === 'new_person') {
+    const overlay = document.getElementById(`overlay-${camId}`);
+    if (overlay) {
+      const tag = document.createElement('div');
+      tag.className = `det-tag ${ev.event_type === 'new_person' ? 'new' : ''}`;
+      tag.innerHTML = `<a href="/person/${ev.payload.person_id}">${ev.payload.person_id}</a>`;
+      overlay.appendChild(tag);
+      setTimeout(() => tag.remove(), 3000);
+    }
+  }
+});
+
+// Poll FPS
+async function refreshStats() {
+  const cameras = await apiFetch('/api/cameras');
+  if (!cameras) return;
+  cameras.forEach(c => {
+    const fpsEl = document.getElementById(`fps-${c.id}`);
+    const detEl = document.getElementById(`det-${c.id}`);
+    if (fpsEl) fpsEl.textContent = c.fps + ' fps';
+    if (detEl) detEl.textContent = c.detection_count + ' detections';
+  });
+}
+
+buildLiveGrid();
+setInterval(refreshStats, 2000);
+</script>
+{% endblock %}

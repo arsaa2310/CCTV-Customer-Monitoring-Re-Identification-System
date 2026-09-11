@@ -1,0 +1,109 @@
+{% extends "base.html" %}
+{% block title %}Search — VisionTrack{% endblock %}
+{% block page_title %}Person Search{% endblock %}
+
+{% block content %}
+<div class="search-layout">
+  <div class="search-upload-area" id="drop-zone">
+    <input type="file" id="search-file" accept="image/*" style="display:none" onchange="handleFile(this.files[0])" />
+    <div class="upload-content" onclick="document.getElementById('search-file').click()">
+      <svg class="upload-icon" viewBox="0 0 48 48" fill="none"><circle cx="24" cy="24" r="22" stroke="currentColor" stroke-width="1.5" opacity=".3"/><path d="M24 14v14M17 21l7-7 7 7" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M14 34h20" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      <p>Drop an image here or <u>click to upload</u></p>
+      <p class="upload-hint">JPEG, PNG · Any size</p>
+    </div>
+    <img id="preview-img" style="display:none;max-height:250px;border-radius:8px;margin:1rem auto;display:block;" />
+  </div>
+
+  <div id="search-status" class="search-status" style="display:none;">
+    <div class="spinner"></div>
+    <span>Extracting embedding and searching…</span>
+  </div>
+
+  <div id="search-results" class="search-results"></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const dropZone = document.getElementById('drop-zone');
+
+// Drag-and-drop
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault(); dropZone.classList.remove('drag-over');
+  handleFile(e.dataTransfer.files[0]);
+});
+
+function handleFile(file) {
+  if (!file || !file.type.startsWith('image/')) {
+    showToast('Please upload an image file.', 'error');
+    return;
+  }
+
+  // Preview
+  const reader = new FileReader();
+  reader.onload = e => {
+    const img = document.getElementById('preview-img');
+    img.src = e.target.result;
+    img.style.display = 'block';
+  };
+  reader.readAsDataURL(file);
+
+  searchImage(file);
+}
+
+async function searchImage(file) {
+  const status = document.getElementById('search-status');
+  const results = document.getElementById('search-results');
+  status.style.display = 'flex';
+  results.innerHTML = '';
+
+  const formData = new FormData();
+  formData.append('file', file);
+
+  try {
+    const resp = await fetch('/api/search/image?top_k=10', {
+      method: 'POST',
+      body: formData,
+    });
+    const data = await resp.json();
+    status.style.display = 'none';
+    renderResults(data);
+  } catch (err) {
+    status.style.display = 'none';
+    results.innerHTML = `<div class="error-state">Search failed: ${err.message}</div>`;
+  }
+}
+
+function renderResults(results) {
+  const container = document.getElementById('search-results');
+  if (!results || results.length === 0) {
+    container.innerHTML = '<div class="empty-state">No similar persons found.</div>';
+    return;
+  }
+
+  container.innerHTML = `
+    <h3 class="results-heading">Top ${results.length} Matches</h3>
+    <div class="results-grid">
+      ${results.map((r, i) => {
+        const snap = r.snapshot ? `/${r.snapshot}` : '/static/img/person-placeholder.svg';
+        const pct = Math.round((r.score || 0) * 100);
+        return `
+          <a class="result-card" href="/person/${r.person_id}">
+            <div class="result-rank">#${i+1}</div>
+            <img class="result-img" src="${snap}" alt="${r.person_id}" onerror="this.src='/static/img/person-placeholder.svg'" />
+            <div class="result-info">
+              <div class="result-pid">${r.person_id}</div>
+              <div class="result-sim">
+                <div class="sim-bar"><div class="sim-fill" style="width:${pct}%"></div></div>
+                <span>${pct}% match</span>
+              </div>
+              <div class="result-meta">📷 ${r.camera || '–'}</div>
+            </div>
+          </a>`;
+      }).join('')}
+    </div>`;
+}
+</script>
+{% endblock %}

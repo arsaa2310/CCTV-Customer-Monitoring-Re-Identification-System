@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block title %}Settings — VisionTrack{% endblock %}
+{% block page_title %}Settings{% endblock %}
+
+{% block content %}
+<div class="settings-layout">
+
+  <!-- System Info -->
+  <div class="settings-card">
+    <h3>System Information</h3>
+    <dl class="detail-list" id="sys-info">
+      <dt>Status</dt><dd id="si-status">Loading…</dd>
+      <dt>GPU</dt><dd id="si-gpu">–</dd>
+      <dt>Qdrant</dt><dd id="si-qdrant">–</dd>
+      <dt>Uptime</dt><dd id="si-uptime">–</dd>
+      <dt>Persons in DB</dt><dd id="si-persons">–</dd>
+    </dl>
+  </div>
+
+  <!-- Camera management -->
+  <div class="settings-card">
+    <h3>Cameras</h3>
+    <p class="settings-hint">Cameras are configured via <code>config/cameras.json</code>. After editing, click Reload.</p>
+    <div id="settings-cam-list" class="settings-cam-list"></div>
+    <button class="btn btn-primary" onclick="reloadCameras()">↻ Reload Cameras</button>
+    <div id="reload-result" class="reload-result"></div>
+  </div>
+
+  <!-- Pipeline Settings -->
+  <div class="settings-card">
+    <h3>Pipeline Settings</h3>
+    <p class="settings-hint">These values come from <code>cameras.json → settings</code>.</p>
+    <dl class="detail-list" id="pipeline-settings">
+      <dt>Similarity Threshold</dt><dd id="ps-sim">–</dd>
+      <dt>Detection Confidence</dt><dd id="ps-conf">–</dd>
+      <dt>Frame Skip</dt><dd id="ps-skip">–</dd>
+      <dt>Reconnect Delay</dt><dd id="ps-delay">–</dd>
+    </dl>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function loadSettings() {
+  const sys = await apiFetch('/api/system');
+  if (sys) {
+    setText('si-status', sys.qdrant_status === 'ok' ? '✅ Running' : '❌ Error');
+    setText('si-gpu', sys.gpu_available ? '✅ CUDA Available' : 'CPU only');
+    setText('si-qdrant', sys.qdrant_status === 'ok' ? '✅ Connected' : '❌ Disconnected');
+    setText('si-uptime', formatUptime(sys.uptime_seconds));
+    setText('si-persons', sys.total_persons);
+  }
+
+  const cameras = await apiFetch('/api/cameras');
+  if (cameras) {
+    const list = document.getElementById('settings-cam-list');
+    list.innerHTML = cameras.map(c => `
+      <div class="settings-cam-row">
+        <span class="dot ${c.online ? 'online' : 'offline'}"></span>
+        <span class="scr-name">${c.name}</span>
+        <span class="scr-id">${c.id}</span>
+        <span class="scr-rtsp">${c.rtsp}</span>
+      </div>`).join('');
+  }
+}
+
+async function reloadCameras() {
+  const result = document.getElementById('reload-result');
+  result.innerHTML = '<span class="loading-text">Reloading…</span>';
+  const data = await apiFetch('/api/cameras/reload', { method: 'POST' });
+  if (data) {
+    result.innerHTML = `
+      <div class="reload-success">
+        ✅ Started: ${(data.started || []).join(', ') || 'none'} |
+        Stopped: ${(data.stopped || []).join(', ') || 'none'}
+      </div>`;
+  } else {
+    result.innerHTML = '<div class="reload-error">❌ Reload failed</div>';
+  }
+  loadSettings();
+}
+
+loadSettings();
+</script>
+{% endblock %}

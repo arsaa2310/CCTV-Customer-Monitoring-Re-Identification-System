@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{% block title %}History — VisionTrack{% endblock %}
+{% block page_title %}Detection History{% endblock %}
+
+{% block content %}
+<div class="history-controls">
+  <select id="filter-cam" class="select" onchange="filterHistory()">
+    <option value="">All Cameras</option>
+  </select>
+  <input type="text" id="filter-person" class="input" placeholder="Filter by Person ID…" oninput="filterHistory()" />
+</div>
+
+<div class="history-timeline" id="history-timeline">
+  <div class="loading-placeholder">Loading history…</div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let allEvents = [];
+
+async function loadHistory() {
+  const events = await apiFetch('/api/history?limit=300');
+  allEvents = events || [];
+
+  // Populate camera filter
+  const cameras = [...new Set(allEvents.map(e => e.camera).filter(Boolean))];
+  const sel = document.getElementById('filter-cam');
+  cameras.forEach(c => {
+    const opt = document.createElement('option');
+    opt.value = c; opt.textContent = c;
+    sel.appendChild(opt);
+  });
+
+  renderHistory(allEvents);
+}
+
+function filterHistory() {
+  const cam = document.getElementById('filter-cam').value;
+  const pid = document.getElementById('filter-person').value.toLowerCase();
+  const filtered = allEvents.filter(e =>
+    (!cam || e.camera === cam) &&
+    (!pid || (e.person_id || '').toLowerCase().includes(pid))
+  );
+  renderHistory(filtered);
+}
+
+function renderHistory(events) {
+  const container = document.getElementById('history-timeline');
+  if (!events.length) {
+    container.innerHTML = '<div class="empty-state">No events found.</div>';
+    return;
+  }
+
+  // Group by person
+  const grouped = {};
+  events.forEach(e => {
+    const pid = e.person_id || 'Unknown';
+    if (!grouped[pid]) grouped[pid] = [];
+    grouped[pid].push(e);
+  });
+
+  container.innerHTML = Object.entries(grouped).map(([pid, evs]) => `
+    <div class="history-group">
+      <div class="history-group-header">
+        <a href="/person/${pid}" class="history-pid">${pid}</a>
+        <span class="history-count">${evs.length} events</span>
+      </div>
+      <div class="history-events">
+        ${evs.map(e => `
+          <div class="history-event">
+            <div class="he-cam">📷 ${e.camera || '–'}</div>
+            <div class="he-time">🕐 ${formatTime(e.timestamp)}</div>
+            ${e.snapshot ? `<img class="he-snap" src="/${e.snapshot}" onerror="this.style.display='none'" />` : ''}
+          </div>
+        `).join('')}
+      </div>
+    </div>
+  `).join('');
+}
+
+// Prepend new events in real time
+window.addEventListener('ws-event', (e) => {
+  if (e.detail.event_type === 'new_detection' || e.detail.event_type === 'new_person') {
+    const ev = {
+      person_id: e.detail.payload.person_id,
+      camera: e.detail.camera_id,
+      timestamp: e.detail.timestamp,
+      snapshot: e.detail.payload.snapshot,
+    };
+    allEvents.unshift(ev);
+    filterHistory();
+  }
+});
+
+loadHistory();
+</script>
+{% endblock %}

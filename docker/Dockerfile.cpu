@@ -1,0 +1,57 @@
+# ============================================================
+# VisionTrack — Dockerfile CPU-only
+# ============================================================
+
+FROM python:3.12-slim-bookworm
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+ENV PIP_NO_CACHE_DIR=1
+ENV PIP_DISABLE_PIP_VERSION_CHECK=1
+
+# ── System dependencies ──────────────────────────────────────
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libgl1 \
+    libglib2.0-0 \
+    libsm6 \
+    libxrender1 \
+    libxext6 \
+    libgomp1 \
+    ffmpeg \
+    git \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN pip install --upgrade pip setuptools wheel
+
+# ── Step 1: numpy DULU ───────────────────────────────────────
+RUN pip install numpy==1.26.4
+
+# ── Step 2: PyTorch CPU ──────────────────────────────────────
+RUN pip install \
+    torch==2.3.0+cpu \
+    torchvision==0.18.0+cpu \
+    --index-url https://download.pytorch.org/whl/cpu
+
+# ── Step 3: Torchreid ────────────────────────────────────────
+RUN pip install Cython h5py six scipy \
+    && pip install \
+        --no-build-isolation \
+        git+https://github.com/KaiyangZhou/deep-person-reid.git
+
+# ── Step 4: App requirements ─────────────────────────────────
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install -r requirements.txt
+
+# ── Step 5: Pre-download YOLO model ──────────────────────────
+RUN python -c "from ultralytics import YOLO; YOLO('yolo11n.pt')"
+
+# ── Source ───────────────────────────────────────────────────
+COPY app/ ./app/
+COPY config/ ./config/
+RUN mkdir -p /app/storage/snapshots
+
+EXPOSE 8000
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]

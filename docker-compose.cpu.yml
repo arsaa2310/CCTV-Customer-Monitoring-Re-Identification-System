@@ -1,0 +1,22 @@
+# ============================================================
+# VisionTrack — Docker Compose CPU + Webcam
+# Usage: docker compose -f docker-compose.yml -f docker-compose.cpu.yml up -d
+#
+# File ini:
+#   1. Pakai Dockerfile.cpu (tanpa CUDA)
+#   2. Aktifkan akses webcam USB otomatis
+# ============================================================
+
+version: "3.9"
+
+services:
+  fastapi:
+    build:
+      dockerfile: docker/Dockerfile.cpu
+    deploy:
+      resources: {}    # Hapus GPU reservation
+    # Webcam USB — sesuaikan jika index berbeda
+    devices:
+      - /dev/video0:/dev/video0
+    group_add:
+      - video

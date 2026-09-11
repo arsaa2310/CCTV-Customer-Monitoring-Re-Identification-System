@@ -1,0 +1,41 @@
+# ============================================================
+# VisionTrack — Python Dependencies
+# Python 3.12
+# ============================================================
+
+# ── Web Framework ────────────────────────────────────────────
+fastapi==0.111.0
+uvicorn[standard]==0.29.0
+python-multipart==0.0.9
+jinja2==3.1.4
+aiofiles==23.2.1
+
+# ── Settings ─────────────────────────────────────────────────
+pydantic==2.7.1
+pydantic-settings==2.2.1
+
+# ── Computer Vision ──────────────────────────────────────────
+opencv-python-headless==4.9.0.80
+numpy==1.26.4
+Pillow==10.3.0
+
+# ── YOLO Detection ───────────────────────────────────────────
+ultralytics==8.2.18
+
+# ── Person Re-ID ─────────────────────────────────────────────
+# torchreid installed separately (see Dockerfile — pip from GitHub)
+# torch / torchvision pinned to CUDA 12.1 in Dockerfile
+
+# ── Tracking ─────────────────────────────────────────────────
+supervision==0.20.0
+
+# ── Vector Database ──────────────────────────────────────────
+qdrant-client==1.9.1
+
+# ── HTTP / Async ─────────────────────────────────────────────
+httpx==0.27.0
+websockets==12.0
+
+# ── Utilities ────────────────────────────────────────────────
+python-dotenv==1.0.1
+watchdog==4.0.0

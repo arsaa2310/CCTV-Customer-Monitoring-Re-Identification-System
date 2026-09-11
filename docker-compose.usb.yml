@@ -1,0 +1,26 @@
+version: "3.9"
+
+services:
+  usb-publisher:
+    image: jrottenberg/ffmpeg:6.0-ubuntu
+    container_name: visiontrack-usb-publisher
+    restart: unless-stopped
+    depends_on:
+      - mediamtx
+    # Hanya aktifkan jika /dev/video0 benar-benar ada di host
+    # devices:
+    #   - /dev/video0:/dev/video0
+    command: [
+      "-f", "v4l2",
+      "-framerate", "15",
+      "-video_size", "640x480",
+      "-i", "/dev/video0",
+      "-c:v", "libx264",
+      "-preset", "ultrafast",
+      "-tune", "zerolatency",
+      "-pix_fmt", "yuv420p",
+      "-f", "rtsp",
+      "rtsp://mediamtx:8554/cam01"
+    ]
+    networks:
+      - visiontrack

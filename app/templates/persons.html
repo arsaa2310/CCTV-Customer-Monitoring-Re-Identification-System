@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title %}Persons — VisionTrack{% endblock %}
+{% block page_title %}Persons{% endblock %}
+{% block top_actions %}
+  <button class="btn btn-sm btn-ghost" onclick="loadPersons()">↻ Refresh</button>
+{% endblock %}
+
+{% block content %}
+<section class="section">
+  <div class="section-header">
+    <h2>Staff</h2>
+  </div>
+  <div class="persons-grid" id="staff-grid">
+    <div class="loading-placeholder">Loading staff…</div>
+  </div>
+</section>
+
+<section class="section" style="margin-top: 2rem;">
+  <div class="section-header">
+    <h2>Customers</h2>
+  </div>
+  <div class="persons-grid" id="customers-grid">
+    <div class="loading-placeholder">Loading customers…</div>
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function loadPersons() {
+  const persons = await apiFetch('/api/persons');
+  const staffGrid = document.getElementById('staff-grid');
+  const customersGrid = document.getElementById('customers-grid');
+
+  if (!persons || persons.length === 0) {
+    staffGrid.innerHTML = '<div class="empty-state">No staff detected.</div>';
+    customersGrid.innerHTML = '<div class="empty-state">No customers detected yet.</div>';
+    return;
+  }
+
+  const staff = persons.filter(p => p.person_label && p.person_label.toLowerCase() === 'staff');
+  const customers = persons.filter(p => !p.person_label || p.person_label.toLowerCase() !== 'staff');
+
+  const renderCard = (p) => {
+    const snap = p.snapshot ? `/snapshots/${p.person_id}/${p.snapshot.split('/').pop()}` : '/static/img/person-placeholder.svg';
+    const displayName = p.person_name ? p.person_name : p.person_id;
+    return `
+    <a class="person-card" href="/person/${p.person_id}">
+      <div class="person-thumb">
+        <img src="${snap}" alt="${p.person_id}" onerror="this.src='/static/img/person-placeholder.svg'" />
+      </div>
+      <div class="person-info">
+        <div class="person-id">${displayName}</div>
+        <div class="person-meta">
+          <span>📷 ${p.camera || '–'}</span>
+          <span>🕐 ${formatTime(p.timestamp)}</span>
+        </div>
+      </div>
+    </a>`;
+  };
+
+  staffGrid.innerHTML = staff.length > 0 ? staff.map(renderCard).join('') : '<div class="empty-state">No staff found.</div>';
+  customersGrid.innerHTML = customers.length > 0 ? customers.map(renderCard).join('') : '<div class="empty-state">No customers found.</div>';
+}
+
+// Update person list when a new person is detected
+window.addEventListener('ws-event', (e) => {
+  if (e.detail.event_type === 'new_person') {
+    loadPersons();
+  }
+});
+
+loadPersons();
+</script>
+{% endblock %}

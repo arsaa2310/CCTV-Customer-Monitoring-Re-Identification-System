@@ -1,0 +1,57 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Virtual environment
+venv/
+.venv/
+env/
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+
+# Data
+data/
+datasets/
+*.csv
+*.json
+*.parquet
+
+# CCTV / video
+*.mp4
+*.avi
+*.mkv
+*.mov
+*.ts
+
+# Images
+*.jpg
+*.jpeg
+*.png
+*.webp
+
+# ML models
+*.pt
+*.pth
+*.onnx
+*.weights
+
+# Logs
+*.log
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Temporary
+tmp/
+temp/
