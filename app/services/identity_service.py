@@ -94,6 +94,7 @@ class IdentityService:
             person_id = best["person_id"]
             similarity = best["score"]
             is_new = False
+            label = best.get("person_label")
             logger.debug(
                 "Matched %s (sim=%.3f) on %s track=%d",
                 person_id, similarity, camera_id, track_id,
@@ -104,6 +105,7 @@ class IdentityService:
                 person_id = await self._next_person_id()
             similarity = 0.0
             is_new = True
+            label = None
             logger.info("New person %s detected on %s", person_id, camera_id)
 
         # ── Snapshot throttle logic ───────────────────────────────────────
@@ -131,6 +133,7 @@ class IdentityService:
             bbox=bbox,
             timestamp=datetime.utcnow(),
             snapshot_path=snapshot_path or None,
+            label=label,
             is_new=is_new,
         )
 

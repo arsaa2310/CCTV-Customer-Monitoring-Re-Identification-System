@@ -28,6 +28,7 @@ class CameraConfig(BaseModel):
     name: str
     location: str
     rtsp: str
+    staff_boundary: list[dict[str, float]] | None = None
 
 
 class PipelineSettings(BaseModel):
@@ -37,9 +38,9 @@ class PipelineSettings(BaseModel):
     snapshot_interval: int = Field(default=30, ge=1)
     max_track_age: int = Field(default=30, ge=1)
     reconnect_delay: int = Field(default=5, ge=1)
-    frame_skip: int = Field(default=10, ge=1)
+    frame_skip: int = Field(default=2, ge=1)
     # Capture throttle settings
-    snapshot_initial_burst: int = Field(default=10, ge=1)   # frames to capture for new person
+    snapshot_initial_burst: int = Field(default=3, ge=1)   # frames to capture for new person
     snapshot_interval_seconds: int = Field(default=60, ge=1) # interval (seconds) after burst
 
 

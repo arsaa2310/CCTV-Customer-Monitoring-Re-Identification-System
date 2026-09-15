@@ -43,7 +43,7 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - ./config:/app/config:ro
+      - ./config:/app/config
       - ./storage:/app/storage
       - yolo_cache:/root/.config/Ultralytics
     environment:

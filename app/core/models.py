@@ -69,6 +69,7 @@ class GlobalPerson(BaseModel):
     bbox: BoundingBox
     timestamp: datetime = Field(default_factory=datetime.utcnow)
     snapshot_path: Optional[str] = None
+    label: Optional[str] = None
     is_new: bool = False            # True when this is a brand-new identity
 
 

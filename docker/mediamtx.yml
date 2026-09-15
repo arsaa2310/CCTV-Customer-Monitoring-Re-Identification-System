@@ -1,3 +1,5 @@
 paths:
   cam01:
     source: "rtsp://admin:admin12345@192.168.100.150:554/cam/realmonitor?channel=3&subtype=0"
+  cam02:
+    source: "rtsp://admin:admin12345@192.168.100.150:554/cam/realmonitor?channel=7&subtype=0"

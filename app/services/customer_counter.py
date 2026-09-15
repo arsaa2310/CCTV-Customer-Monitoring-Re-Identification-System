@@ -23,8 +23,8 @@ if TYPE_CHECKING:
 
 logger = get_logger("services.customer_counter")
 
-TIMEOUT_HOURS: float = 3.0        # hours of inactivity before removal
-SWEEP_INTERVAL_SECONDS: int = 300  # how often to run the cleanup sweep (5 min)
+TIMEOUT_MINUTES: float = 15.0      # minutes of inactivity before removal from active list
+SWEEP_INTERVAL_SECONDS: int = 60   # how often to run the cleanup sweep (every 1 min)
 
 
 class CustomerCounter:
@@ -68,19 +68,22 @@ class CustomerCounter:
     def customer_ids(self) -> list[str]:
         return list(self._active.keys())
 
-    async def on_detection(self, person_id: str, qdrant: "QdrantService") -> None:
+    async def on_detection(self, person_id: str, qdrant: "QdrantService", label: str | None = None) -> None:
         """
         Called every time a person is detected by the camera pipeline.
-        Fetches label from Qdrant, then updates the counter accordingly.
+        Fetches label from Qdrant if not provided, then updates the counter accordingly.
         Broadcasts via WebSocket if count changed.
         """
-        # Fetch label in executor (blocking Qdrant call)
-        loop = asyncio.get_event_loop()
-        meta = await loop.run_in_executor(
-            None, lambda: qdrant.get_person_metadata(person_id)
-        )
-        label = (meta.get("label") or "").strip().lower()
-        is_staff = label == "staff"
+        if label is None:
+            # Fetch label in executor (blocking Qdrant call)
+            loop = asyncio.get_event_loop()
+            meta = await loop.run_in_executor(
+                None, lambda: qdrant.get_person_metadata(person_id)
+            )
+            label = meta.get("label")
+
+        label_str = (label or "").strip().lower()
+        is_staff = label_str == "staff"
 
         changed = False
         async with self._lock:
@@ -124,7 +127,7 @@ class CustomerCounter:
                 logger.error("Sweep error: %s", exc)
 
     async def _sweep_inactive(self) -> None:
-        cutoff = datetime.utcnow() - timedelta(hours=TIMEOUT_HOURS)
+        cutoff = datetime.utcnow() - timedelta(minutes=TIMEOUT_MINUTES)
         removed = []
         async with self._lock:
             for pid, last_seen in list(self._active.items()):
@@ -133,8 +136,8 @@ class CustomerCounter:
                     removed.append(pid)
         if removed:
             logger.info(
-                "Swept %d inactive customer(s) (timeout=%dh): %s",
-                len(removed), int(TIMEOUT_HOURS), removed,
+                "Swept %d inactive customer(s) (timeout=%.0fmin): %s",
+                len(removed), TIMEOUT_MINUTES, removed,
             )
             await self._broadcast()
 

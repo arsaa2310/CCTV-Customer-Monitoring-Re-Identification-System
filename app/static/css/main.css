@@ -45,7 +45,7 @@ body {
   font-family: var(--font-ui);
   font-size: 14px;
   display: flex;
-  overflow: hidden;
+  overflow: auto;
 }
 a { color: inherit; text-decoration: none; }
 img { max-width: 100%; display: block; }
@@ -281,6 +281,12 @@ code { font-family: var(--font-mono); font-size: 0.85em; }
   animation: fadeout 3s forwards;
 }
 .det-tag.new { border-color: var(--accent-amber); color: var(--accent-amber); }
+.det-tag.staff-tag { 
+  background: rgba(0, 214, 143, 0.2); 
+  border-color: #00d68f; 
+  color: #00d68f; 
+  font-weight: 600;
+}
 @keyframes fadeout { 0%,60% { opacity:1 } 100% { opacity:0 } }
 
 /* ── Persons grid ───────────────────────────────────── */

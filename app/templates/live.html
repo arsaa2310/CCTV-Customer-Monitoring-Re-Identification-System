@@ -12,10 +12,98 @@
   <div id="overlay-details"></div>
   <button onclick="document.getElementById('overlay-info').style.display='none'">✕</button>
 </div>
+
+<!-- Dark backdrop for modal -->
+<div id="draw-backdrop" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.7); z-index:9998;" onclick="closeDrawModal()"></div>
+
+<!-- Drawing Modal -->
+<div id="draw-modal" style="display:none; position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); z-index:9999; background:#1a1a2e; padding:24px; border-radius:12px; width:80vw; max-width:800px; box-shadow:0 20px 60px rgba(0,0,0,0.8); border:1px solid #333;">
+  <h3 style="margin:0 0 16px 0; color:#fff; font-size:16px;">🖊️ Draw Staff Area — klik titik-titik di gambar kamera</h3>
+  <p style="color:#aaa; font-size:12px; margin:0 0 12px 0;">Klik minimal 3 titik untuk membentuk area poligon, lalu klik Save Area.</p>
+  <div id="draw-container" style="position:relative; width:100%; background:#000; border-radius:8px; overflow:hidden;">
+    <img id="draw-img" style="width:100%; display:block; user-select:none; pointer-events:none;" src="" />
+    <canvas id="draw-modal-canvas" style="position:absolute;top:0;left:0;width:100%;height:100%;cursor:crosshair;"></canvas>
+  </div>
+  <div style="margin-top:16px; display:flex; gap:10px; justify-content:flex-end; align-items:center;">
+    <span id="draw-point-count" style="color:#aaa; font-size:12px; margin-right:auto;">0 titik</span>
+    <button class="btn" onclick="clearModalBoundary()" style="background:#555;">🗑 Hapus Semua</button>
+    <button class="btn" onclick="undoModalPoint()" style="background:#555;">↩ Undo</button>
+    <button class="btn" onclick="closeDrawModal()" style="background:#333;">Batal</button>
+    <button class="btn" onclick="saveModalBoundary()" style="background:#00d68f; color:#000; font-weight:600;">✅ Save Area</button>
+  </div>
+</div>
+
 {% endblock %}
 
 {% block scripts %}
 <script>
+// ─── Polygon drawing helper ───────────────────────────────────────────────────
+function drawPolygon(canvas, points) {
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    if (!points || points.length === 0) return;
+
+    const w = canvas.width;
+    const h = canvas.height;
+
+    ctx.beginPath();
+    ctx.moveTo(points[0].x * w, points[0].y * h);
+    for (let i = 1; i < points.length; i++) {
+        ctx.lineTo(points[i].x * w, points[i].y * h);
+    }
+    if (points.length > 2) {
+        ctx.closePath();
+        ctx.fillStyle = 'rgba(0, 214, 143, 0.25)';
+        ctx.fill();
+    }
+    ctx.strokeStyle = '#00d68f';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([6, 3]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Draw dots on each point
+    points.forEach((p, i) => {
+        ctx.beginPath();
+        ctx.arc(p.x * w, p.y * h, 5, 0, 2 * Math.PI);
+        ctx.fillStyle = i === 0 ? '#ffcc00' : '#00d68f';
+        ctx.fill();
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+    });
+
+    // Label
+    if (points.length >= 3) {
+        const cx = points.reduce((s, p) => s + p.x, 0) / points.length * w;
+        const cy = points.reduce((s, p) => s + p.y, 0) / points.length * h;
+        ctx.font = 'bold 13px sans-serif';
+        ctx.fillStyle = '#00d68f';
+        ctx.textAlign = 'center';
+        ctx.fillText('STAFF AREA', cx, cy);
+    }
+}
+
+// ─── ResizeObserver for persistent canvases ────────────────────────────────────
+const canvasObservers = new Map();
+
+function setupCanvasObserver(canvas, getPoints) {
+    if (!canvas) return;
+    if (canvasObservers.has(canvas)) {
+        canvasObservers.get(canvas).disconnect();
+    }
+    const observer = new ResizeObserver(() => {
+        if (canvas.clientWidth > 0 && canvas.clientHeight > 0) {
+            canvas.width = canvas.clientWidth;
+            canvas.height = canvas.clientHeight;
+            drawPolygon(canvas, getPoints());
+        }
+    });
+    observer.observe(canvas);
+    canvasObservers.set(canvas, observer);
+}
+
 async function buildLiveGrid() {
   const cameras = await apiFetch('/api/cameras');
   if (!cameras || cameras.length === 0) {
@@ -33,17 +121,135 @@ async function buildLiveGrid() {
           ${cam.online ? '● LIVE' : '○ OFFLINE'}
         </span>
       </div>
-      <div class="stream-body">
+      <div class="stream-body" style="position: relative;">
         <img class="stream-img" src="/stream/${cam.id}"
              alt="${cam.name}" onerror="handleStreamError(this, '${cam.id}')" />
+        <canvas id="canvas-${cam.id}" class="draw-canvas" style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:10;"></canvas>
         <div class="stream-overlay" id="overlay-${cam.id}"></div>
       </div>
-      <div class="stream-footer">
-        <span id="fps-${cam.id}" class="stream-fps">– fps</span>
-        <span id="det-${cam.id}" class="stream-det">0 detections</span>
+      <div class="stream-footer" style="display:flex; justify-content:space-between; align-items:center;">
+        <div>
+          <span id="fps-${cam.id}" class="stream-fps">– fps</span>
+          <span id="det-${cam.id}" class="stream-det">0 detections</span>
+        </div>
+        <button id="btn-${cam.id}" class="btn-sm" style="font-size:10px; padding:2px 6px;" onclick="startDrawing(event, '${cam.id}')">Set Staff Area</button>
       </div>
     </div>
   `).join('');
+  
+  // Setup observers immediately so they draw when images load
+  cameras.forEach(cam => {
+    if (cam.staff_boundary && cam.staff_boundary.length >= 3) {
+      if (!drawingState[cam.id]) drawingState[cam.id] = {};
+      drawingState[cam.id].points = cam.staff_boundary;
+    }
+    const canvas = document.getElementById(`canvas-${cam.id}`);
+    setupCanvasObserver(canvas, () => drawingState[cam.id]?.points || []);
+  });
+}
+
+let drawingState = {};
+let modalState = {
+    camId: null,
+    points: []
+};
+
+function startDrawing(e, camId) {
+    modalState.camId = camId;
+    
+    // Copy existing points if any, or reset
+    if (drawingState[camId] && drawingState[camId].points) {
+        modalState.points = [...drawingState[camId].points];
+    } else {
+        modalState.points = [];
+    }
+
+    const backdrop = document.getElementById('draw-backdrop');
+    const modal = document.getElementById('draw-modal');
+    const img = document.getElementById('draw-img');
+    const canvas = document.getElementById('draw-modal-canvas');
+    const counter = document.getElementById('draw-point-count');
+    
+    backdrop.style.display = 'block';
+    modal.style.display = 'block';
+    img.src = `/stream/${camId}`;
+
+    // Force canvas size after modal is visible
+    requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+            const container = document.getElementById('draw-container');
+            canvas.width = container.clientWidth;
+            canvas.height = container.clientHeight;
+            drawPolygon(canvas, modalState.points);
+            if (counter) counter.textContent = modalState.points.length + ' titik';
+        });
+    });
+
+    canvas.onclick = (ev) => {
+        const rect = canvas.getBoundingClientRect();
+        const scaleX = canvas.width / rect.width;
+        const scaleY = canvas.height / rect.height;
+        modalState.points.push({
+            x: ((ev.clientX - rect.left) * scaleX) / canvas.width,
+            y: ((ev.clientY - rect.top) * scaleY) / canvas.height
+        });
+        drawPolygon(canvas, modalState.points);
+        if (counter) counter.textContent = modalState.points.length + ' titik';
+    };
+}
+
+function undoModalPoint() {
+    modalState.points.pop();
+    const canvas = document.getElementById('draw-modal-canvas');
+    const counter = document.getElementById('draw-point-count');
+    drawPolygon(canvas, modalState.points);
+    if (counter) counter.textContent = modalState.points.length + ' titik';
+}
+
+function clearModalBoundary() {
+    modalState.points = [];
+    const canvas = document.getElementById('draw-modal-canvas');
+    const counter = document.getElementById('draw-point-count');
+    drawPolygon(canvas, modalState.points);
+    if (counter) counter.textContent = '0 titik';
+}
+
+function closeDrawModal() {
+    document.getElementById('draw-modal').style.display = 'none';
+    document.getElementById('draw-backdrop').style.display = 'none';
+    document.getElementById('draw-img').src = '';
+}
+
+async function saveModalBoundary() {
+    const camId = modalState.camId;
+    const points = modalState.points;
+
+    if (points.length < 3) {
+        alert('Minimal 3 titik diperlukan untuk membuat area.');
+        return;
+    }
+    
+    // Update local state
+    if (!drawingState[camId]) drawingState[camId] = {};
+    drawingState[camId].points = [...points];
+    
+    // Update stream card canvas immediately
+    const smallCanvas = document.getElementById(`canvas-${camId}`);
+    if (smallCanvas && smallCanvas.clientWidth > 0) {
+        smallCanvas.width = smallCanvas.clientWidth;
+        smallCanvas.height = smallCanvas.clientHeight;
+        drawPolygon(smallCanvas, points);
+    }
+    
+    try {
+        await apiFetch(`/api/cameras/${camId}/boundary`, {
+            method: 'POST',
+            body: JSON.stringify({ staff_boundary: points })
+        });
+        closeDrawModal();
+    } catch (err) {
+        alert('Gagal menyimpan area: ' + err);
+    }
 }
 
 function handleStreamError(img, camId) {
@@ -72,9 +278,17 @@ window.addEventListener('ws-event', (e) => {
   if (ev.event_type === 'new_detection' || ev.event_type === 'new_person') {
     const overlay = document.getElementById(`overlay-${camId}`);
     if (overlay) {
+      const isStaff = ev.payload.label === 'staff';
       const tag = document.createElement('div');
-      tag.className = `det-tag ${ev.event_type === 'new_person' ? 'new' : ''}`;
-      tag.innerHTML = `<a href="/person/${ev.payload.person_id}">${ev.payload.person_id}</a>`;
+      
+      let cssClass = 'det-tag';
+      if (ev.event_type === 'new_person') cssClass += ' new';
+      if (isStaff) cssClass += ' staff-tag';
+      tag.className = cssClass;
+
+      const labelStr = isStaff ? ' (Staff)' : '';
+      tag.innerHTML = `<a href="/person/${ev.payload.person_id}">${ev.payload.person_id}${labelStr}</a>`;
+      
       overlay.appendChild(tag);
       setTimeout(() => tag.remove(), 3000);
     }

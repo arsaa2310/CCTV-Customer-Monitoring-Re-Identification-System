@@ -2,6 +2,9 @@
 {% block title %}{{ person_id }} — VisionTrack{% endblock %}
 {% block page_title %}{{ name or person_id }}{% endblock %}
 {% block top_actions %}
+  <button id="mark-staff-btn" class="btn btn-sm btn-primary" style="background:#00d68f; color:#000; border:none; margin-right:8px;">
+    👤 Mark as Staff
+  </button>
   <a href="/persons" class="btn btn-sm btn-ghost">← All Persons</a>
 {% endblock %}
 
@@ -188,6 +191,36 @@
       setTimeout(() => { status.style.display = "none"; }, 4000);
     }
   });
+
+  // Quick Action: Mark as Staff
+  const markStaffBtn = document.getElementById("mark-staff-btn");
+  if (markStaffBtn) {
+    markStaffBtn.addEventListener("click", async () => {
+      markStaffBtn.disabled = true;
+      markStaffBtn.textContent = "Sedang melatih...";
+      
+      try {
+        const resp = await fetch(`/api/person/${encodeURIComponent(PERSON_ID)}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ label: "staff" }),
+        });
+        if (resp.ok) {
+          const data = await resp.json();
+          document.getElementById("display-label").textContent = "staff";
+          document.getElementById("person-label").value = "staff";
+          alert("Berhasil! Wajah ini telah diregistrasi sebagai Staff untuk pencocokan OSNet.");
+        } else {
+          alert("Gagal menandai sebagai staff.");
+        }
+      } catch (err) {
+        alert("Error: " + err.message);
+      } finally {
+        markStaffBtn.disabled = false;
+        markStaffBtn.textContent = "👤 Mark as Staff";
+      }
+    });
+  }
 
   // Format timestamps
   document.querySelectorAll('.snap-timestamp').forEach(el => {

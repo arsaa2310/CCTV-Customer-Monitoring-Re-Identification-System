@@ -9,7 +9,10 @@ Shared ML models are instantiated once and injected into each pipeline.
 
 from __future__ import annotations
 
+import asyncio
+import os
 import time
+from pathlib import Path
 from typing import Any
 
 from app.core.config import CameraConfig, load_cameras_config
@@ -44,6 +47,7 @@ class CameraManager:
         self._qdrant: QdrantService | None = None
         self._snapshot: SnapshotService | None = None
         self._customer_counter: CustomerCounter | None = None
+        self._cleanup_task: asyncio.Task | None = None
 
     # ------------------------------------------------------------------
     # Startup / Shutdown
@@ -57,6 +61,12 @@ class CameraManager:
         # Start customer counter background sweep
         if self._customer_counter:
             self._customer_counter.start_sweep()
+        # Start ghost-person cleanup task
+        try:
+            loop = asyncio.get_event_loop()
+            self._cleanup_task = loop.create_task(self._ghost_cleanup_loop())
+        except RuntimeError:
+            pass  # no event loop yet (tests etc.)
 
     def shutdown(self) -> None:
         """Called at FastAPI shutdown. Stop all pipelines."""
@@ -66,6 +76,8 @@ class CameraManager:
         self._pipelines.clear()
         if self._customer_counter:
             self._customer_counter.stop()
+        if self._cleanup_task:
+            self._cleanup_task.cancel()
 
     # ------------------------------------------------------------------
     # Hot reload
@@ -109,6 +121,7 @@ class CameraManager:
                     "online": p.online if p else False,
                     "fps": round(p.fps, 1) if p else 0.0,
                     "detection_count": p.detection_count if p else 0,
+                    "staff_boundary": cam.staff_boundary,
                 }
             )
         return statuses
@@ -193,3 +206,85 @@ class CameraManager:
     @property
     def customer_counter(self) -> CustomerCounter | None:
         return self._customer_counter
+
+    # ------------------------------------------------------------------
+    # Ghost-person cleanup (1-snapshot persons older than 5 minutes)
+    # ------------------------------------------------------------------
+
+    async def _ghost_cleanup_loop(self) -> None:
+        """Background task: every 2 minutes, delete ghost persons."""
+        await asyncio.sleep(60)  # wait 1 min before first run
+        while True:
+            try:
+                await asyncio.get_event_loop().run_in_executor(
+                    None, self._cleanup_ghosts
+                )
+            except asyncio.CancelledError:
+                break
+            except Exception as exc:
+                logger.warning("Ghost cleanup error: %s", exc)
+            await asyncio.sleep(120)  # run every 2 minutes
+
+    def _cleanup_ghosts(self) -> None:
+        """Synchronous: find and delete ghost persons from Qdrant + snapshots."""
+        if self._qdrant is None:
+            return
+        try:
+            ghosts = self._qdrant.get_ghost_persons(
+                min_age_minutes=5,
+                low_snapshot_age_minutes=31,
+                low_snapshot_threshold=15,
+            )
+        except Exception as exc:
+            logger.warning("Could not get ghost persons: %s", exc)
+            return
+
+        if not ghosts:
+            return
+
+        logger.info("Ghost cleanup: found %d persons to delete", len(ghosts))
+        for ghost in ghosts:
+            pid = ghost["person_id"]
+            reason = ghost.get("reason", "unknown")
+            snap_count = ghost.get("snapshot_count", 0)
+            snapshot_paths: list[str] = ghost.get("snapshot_paths", [])
+
+            try:
+                self._qdrant.delete_person(pid)
+            except Exception as exc:
+                logger.warning("Failed to delete ghost %s from Qdrant: %s", pid, exc)
+                continue
+
+            # Delete all snapshot files
+            for snapshot in snapshot_paths:
+                try:
+                    path = Path(snapshot)
+                    if not path.is_absolute():
+                        path = Path("/app") / path
+                    if path.exists():
+                        path.unlink()
+                        logger.debug("Deleted ghost snapshot: %s", path)
+                except Exception as exc:
+                    logger.warning("Could not delete snapshot %s: %s", snapshot, exc)
+
+            logger.info(
+                "Deleted person %s | reason=%s | snapshots=%d | last_seen=%s",
+                pid, reason, snap_count, ghost.get("last_seen"),
+            )
+
+        # ── Rule 3: persons with ZERO snapshots (noise / false tracks) ──
+        try:
+            no_snap_ids = self._qdrant.get_persons_without_snapshot()
+        except Exception as exc:
+            logger.warning("Could not get zero-snapshot persons: %s", exc)
+            no_snap_ids = []
+
+        if no_snap_ids:
+            logger.info("Zero-snapshot cleanup: deleting %d persons", len(no_snap_ids))
+            for pid in no_snap_ids:
+                try:
+                    self._qdrant.delete_person(pid)
+                    logger.info("Deleted zero-snapshot person: %s", pid)
+                except Exception as exc:
+                    logger.warning("Failed to delete %s: %s", pid, exc)
+

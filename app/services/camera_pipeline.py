@@ -183,12 +183,32 @@ class CameraPipeline:
 
                         self.detection_count += 1
 
+                        # Check Staff Boundary
+                        if self._cfg.staff_boundary and len(self._cfg.staff_boundary) >= 3:
+                            h, w = frame.shape[:2]
+                            cx = (person.bbox.x1 + person.bbox.x2) / 2.0 / w
+                            cy = person.bbox.y2 / float(h)
+                            pts = np.array([[(pt["x"], pt["y"]) for pt in self._cfg.staff_boundary]], dtype=np.float32)
+                            dist = cv2.pointPolygonTest(pts, (cx, cy), False)
+                            if dist >= 0:
+                                gp.label = "staff"
+                                asyncio.ensure_future(
+                                    asyncio.get_event_loop().run_in_executor(
+                                        None,
+                                        self._identity._qdrant.update_person_metadata,
+                                        gp.person_id,
+                                        None,  # name
+                                        "staff", # label
+                                    )
+                                )
+
                         # Update customer counter (non-blocking)
                         if self._customer_counter is not None:
                             asyncio.ensure_future(
                                 self._customer_counter.on_detection(
                                     gp.person_id,
                                     self._identity._qdrant,
+                                    label=gp.label,
                                 )
                             )
 
@@ -265,10 +285,11 @@ class CameraPipeline:
     @staticmethod
     def _draw_annotation(frame: np.ndarray, gp: GlobalPerson) -> None:
         bbox = gp.bbox
-        color = (0, 255, 130) if not gp.is_new else (0, 180, 255)
+        is_staff = (gp.label == "staff")
+        color = (255, 100, 100) if is_staff else ((0, 255, 130) if not gp.is_new else (0, 180, 255))
         cv2.rectangle(frame, (bbox.x1, bbox.y1), (bbox.x2, bbox.y2), color, 2)
         lines = [
-            gp.person_id,
+            gp.person_id + (" (STAFF)" if is_staff else ""),
             f"T:{gp.track_id}  S:{gp.similarity:.2f}",
         ]
         y = max(bbox.y1 - 36, 0)

@@ -43,6 +43,9 @@ class UpdatePersonRequest(BaseModel):
     name: str | None = None
     label: str | None = None
 
+class UpdateBoundaryRequest(BaseModel):
+    staff_boundary: list[dict[str, float]] | None = None
+
 router = APIRouter(prefix="/api")
 
 # Dependency injected from app state
@@ -179,6 +182,51 @@ async def reload_cameras(request: Request) -> dict[str, Any]:
     manager: CameraManager = get_manager(request)
     result = manager.reload()
     return result
+
+
+@router.post("/cameras/{camera_id}/boundary")
+async def update_camera_boundary(
+    camera_id: str,
+    request: Request,
+    body: UpdateBoundaryRequest,
+) -> dict[str, Any]:
+    """Update camera staff boundary."""
+    try:
+        config_path = Path("config/cameras.json")
+        if not config_path.exists():
+            raise HTTPException(404, "cameras.json not found")
+
+        with open(config_path) as f:
+            config = json.load(f)
+
+        found = False
+        for cam in config.get("cameras", []):
+            if cam.get("id") == camera_id:
+                if body.staff_boundary is not None:
+                    cam["staff_boundary"] = [
+                        {"x": float(pt["x"]), "y": float(pt["y"])} 
+                        for pt in body.staff_boundary
+                    ]
+                else:
+                    cam["staff_boundary"] = None
+                found = True
+                break
+
+        if not found:
+            raise HTTPException(404, f"Camera {camera_id} not found in cameras.json")
+
+        with open(config_path, "w") as f:
+            json.dump(config, f, indent=2)
+
+        manager: CameraManager = get_manager(request)
+        manager.reload()
+
+        return {"status": "success", "message": "Boundary updated"}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("Failed to update boundary")
+        raise HTTPException(500, f"Failed to update boundary: {exc}")
 
 
 # ---------------------------------------------------------------------------
@@ -414,3 +462,15 @@ async def system_info(request: Request) -> dict[str, Any]:
         "gpu_available": is_cuda_available(),
         "qdrant_status": "ok" if qdrant_ok else "error",
     }
+
+
+@router.post("/system/cleanup")
+async def run_cleanup(request: Request) -> dict[str, Any]:
+    """Manually trigger ghost-person and zero-snapshot cleanup now."""
+    manager: CameraManager = get_manager(request)
+    if manager.qdrant is None:
+        raise HTTPException(503, "Qdrant not ready")
+
+    loop = asyncio.get_event_loop()
+    await loop.run_in_executor(None, manager._cleanup_ghosts)
+    return {"status": "success", "message": "Cleanup completed. Check server logs for details."}

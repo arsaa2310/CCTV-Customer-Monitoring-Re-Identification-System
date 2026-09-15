@@ -386,3 +386,116 @@ class QdrantService:
             ),
         )
         logger.info(f"Deleted all embeddings for person {person_id}")
+
+    def get_ghost_persons(
+        self,
+        min_age_minutes: int = 5,
+        low_snapshot_age_minutes: int = 31,
+        low_snapshot_threshold: int = 15,
+    ) -> list[dict[str, Any]]:
+        """
+        Return persons that meet any of the following cleanup criteria:
+
+        Rule 1 — 'ghost':  ≤1 snapshot AND last seen > min_age_minutes ago.
+        Rule 2 — 'low':    <low_snapshot_threshold snapshots AND last seen
+                           > low_snapshot_age_minutes ago.
+
+        Returns a list of dicts with keys:
+            person_id, snapshot_paths (list), last_seen, reason
+        """
+        from datetime import timedelta, timezone
+
+        now = datetime.now(timezone.utc)
+        cutoff_ghost = now - timedelta(minutes=min_age_minutes)
+        cutoff_low   = now - timedelta(minutes=low_snapshot_age_minutes)
+
+        results, _ = self._call(
+            "scroll",
+            collection_name=COLLECTION,
+            limit=100000,
+            with_payload=True,
+            with_vectors=False,
+        )
+
+        # Group by person_id
+        persons: dict[str, list[dict]] = {}
+        for r in results:
+            payload = dict(r.payload or {})
+            pid = payload.get("person_id")
+            if pid:
+                persons.setdefault(pid, []).append(payload)
+
+        ghosts = []
+        for pid, records in persons.items():
+            # Collect all unique snapshot paths
+            snapshot_paths = list({
+                r["snapshot"] for r in records
+                if r.get("snapshot")
+            })
+
+            # Determine last-seen timestamp
+            timestamps = [r.get("timestamp", "") for r in records if r.get("timestamp")]
+            if not timestamps:
+                continue
+            last_ts_str = max(timestamps)
+            try:
+                last_ts = datetime.fromisoformat(last_ts_str.replace("Z", "+00:00"))
+                if last_ts.tzinfo is None:
+                    last_ts = last_ts.replace(tzinfo=timezone.utc)
+            except Exception:
+                continue
+
+            snap_count = len(snapshot_paths)
+
+            reason = None
+            # Rule 1: ≤1 snapshot, older than min_age_minutes
+            if snap_count <= 1 and last_ts < cutoff_ghost:
+                reason = "ghost_few_snapshots"
+            # Rule 2: <15 snapshots, older than 31 minutes
+            elif snap_count < low_snapshot_threshold and last_ts < cutoff_low:
+                reason = "low_snapshot_count"
+
+            if reason:
+                ghosts.append({
+                    "person_id": pid,
+                    "snapshot_paths": snapshot_paths,
+                    "last_seen": last_ts_str,
+                    "reason": reason,
+                    "snapshot_count": snap_count,
+                })
+
+        logger.info(
+            "Ghost scan: %d persons checked, %d flagged for deletion",
+            len(persons), len(ghosts)
+        )
+        return ghosts
+
+    def get_persons_without_snapshot(self) -> list[str]:
+        """
+        Return person_ids that have zero snapshots across ALL their records.
+        These are noise / false tracks and can be deleted safely.
+        """
+        results, _ = self._call(
+            "scroll",
+            collection_name=COLLECTION,
+            limit=100000,
+            with_payload=True,
+            with_vectors=False,
+        )
+
+        # Group by person_id; track whether any snapshot exists
+        persons: dict[str, bool] = {}  # pid → has_snapshot
+        for r in results:
+            payload = dict(r.payload or {})
+            pid = payload.get("person_id")
+            if not pid:
+                continue
+            has_snap = bool(payload.get("snapshot"))
+            if pid not in persons:
+                persons[pid] = has_snap
+            elif has_snap:
+                persons[pid] = True
+
+        no_snap = [pid for pid, has in persons.items() if not has]
+        logger.info("Found %d persons with zero snapshots", len(no_snap))
+        return no_snap
